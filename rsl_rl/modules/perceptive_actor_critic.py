@@ -41,8 +41,8 @@ class PerceptiveActorCritic(nn.Module):
         self.tot_perceptive_dims = 1
         for perceptive_dim in self.perceptive_dims:
             self.tot_perceptive_dims *= perceptive_dim
-        mlp_input_dim_a = num_actor_obs - self.tot_perceptive_dims + 128
-        mlp_input_dim_c = num_critic_obs - self.tot_perceptive_dims + 128
+        mlp_input_dim_a = num_actor_obs - self.tot_perceptive_dims + 288
+        mlp_input_dim_c = num_critic_obs - self.tot_perceptive_dims + 288
         # Policy
         actor_layers = []
         actor_layers.append(nn.Linear(mlp_input_dim_a, actor_hidden_dims[0]))
@@ -69,7 +69,7 @@ class PerceptiveActorCritic(nn.Module):
 
         # Perceptive inputs
         self.encoder = nn.Sequential(
-            nn.Conv2d(3, 8, kernel_size=3, stride=2, padding=1), # 64
+            nn.Conv2d(4, 8, kernel_size=3, stride=2, padding=1), # 64
             nn.ReLU(),
             nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1), # 32
             nn.ReLU(),

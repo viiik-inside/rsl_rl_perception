@@ -15,7 +15,7 @@ class Flatten(nn.Module):
         return inp.reshape(inp.size(0), -1)
 
 
-class PerceptiveActorCritic(nn.Module):
+class OccupancyActorCritic(nn.Module):
     is_recurrent = False
 
     def __init__(
@@ -41,8 +41,8 @@ class PerceptiveActorCritic(nn.Module):
         self.tot_perceptive_dims = 1
         for perceptive_dim in self.perceptive_dims:
             self.tot_perceptive_dims *= perceptive_dim
-        mlp_input_dim_a = num_actor_obs - self.tot_perceptive_dims + 128
-        mlp_input_dim_c = num_critic_obs - self.tot_perceptive_dims + 128
+        mlp_input_dim_a = num_actor_obs - self.tot_perceptive_dims + 512
+        mlp_input_dim_c = num_critic_obs - self.tot_perceptive_dims + 512
         # Policy
         actor_layers = []
         actor_layers.append(nn.Linear(mlp_input_dim_a, actor_hidden_dims[0]))
@@ -69,21 +69,18 @@ class PerceptiveActorCritic(nn.Module):
 
         # Perceptive inputs
         self.encoder = nn.Sequential(
-            nn.Conv2d(3, 8, kernel_size=3, stride=2, padding=1), # 64
+            nn.Conv3d(1, 8, kernel_size=3, stride=2, padding=1),  # Output: 8 x 25 x 25 x 25
             nn.ReLU(),
-            nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1), # 32
+            nn.Conv3d(8, 16, kernel_size=3, stride=2, padding=1),  # Output: 16 x 13 x 13 x 13
             nn.ReLU(),
-            nn.Conv2d(16, 32, kernel_size=3, stride=2, padding=1), # 16
+            nn.Conv3d(16, 32, kernel_size=3, stride=2, padding=1),  # Output: 32 x 7 x 7 x 7
             nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1), # 8
+            nn.Conv3d(32, 64, kernel_size=3, stride=2, padding=1),  # Output: 64 x 4 x 4 x 4
             nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1), # 4
+            nn.Conv3d(64, 64, kernel_size=3, stride=2, padding=1),  # Output: 64 x 2 x 2 x 2
             nn.ReLU(),
-            nn.Conv2d(32, 32, kernel_size=3, stride=2, padding=1), # 2
-            nn.ReLU(),
-            Flatten(),
+            nn.Flatten(),  # Flatten to a 1D vector
         )
-
 
         print(f"Actor MLP: {self.actor}")
         print(f"Critic MLP: {self.critic}")

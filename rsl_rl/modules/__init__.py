@@ -7,5 +7,6 @@ from .actor_critic import ActorCritic
 from .actor_critic_recurrent import ActorCriticRecurrent
 from .normalizer import EmpiricalNormalization
 from .perceptive_actor_critic import PerceptiveActorCritic
+from .occupancy_actor_critic import OccupancyActorCritic
 
-__all__ = ["ActorCritic", "ActorCriticRecurrent", "PerceptiveActorCritic"]
+__all__ = ["ActorCritic", "ActorCriticRecurrent", "PerceptiveActorCritic", "OccupancyActorCritic"]
