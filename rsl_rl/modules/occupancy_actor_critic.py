@@ -41,8 +41,8 @@ class OccupancyActorCritic(nn.Module):
         self.tot_perceptive_dims = 1
         for perceptive_dim in self.perceptive_dims:
             self.tot_perceptive_dims *= perceptive_dim
-        mlp_input_dim_a = num_actor_obs - self.tot_perceptive_dims + 512
-        mlp_input_dim_c = num_critic_obs - self.tot_perceptive_dims + 512
+        mlp_input_dim_a = num_actor_obs - self.tot_perceptive_dims + 3 -3
+        mlp_input_dim_c = num_critic_obs - self.tot_perceptive_dims + 3 -3
         # Policy
         actor_layers = []
         actor_layers.append(nn.Linear(mlp_input_dim_a, actor_hidden_dims[0]))
@@ -80,6 +80,9 @@ class OccupancyActorCritic(nn.Module):
             nn.Conv3d(64, 64, kernel_size=3, stride=2, padding=1),  # Output: 64 x 2 x 2 x 2
             nn.ReLU(),
             nn.Flatten(),  # Flatten to a 1D vector
+            nn.Linear(64 * 2 * 2 * 2, 128),  # Fully connected layer
+            nn.ReLU(),
+            nn.Linear(128, 3)  # Output layer mapping to (X, Y, Z)
         )
 
         print(f"Actor MLP: {self.actor}")
@@ -91,6 +94,10 @@ class OccupancyActorCritic(nn.Module):
         self.distribution = None
         # disable args validation for speedup
         Normal.set_default_validate_args = False
+
+        # Add vision encoder latent space
+        self.vision_latent_space = None
+        self.obstacle_position_observation = None
 
         # seems that we get better performance without init
         # self.init_memory_weights(self.memory_a, 0.001, 0.)
@@ -123,11 +130,13 @@ class OccupancyActorCritic(nn.Module):
         return self.distribution.entropy().sum(dim=-1)
 
     def update_distribution(self, observations):
-        obs_proprio, obs_perceptive = observations[:, :-self.tot_perceptive_dims], observations[:, -self.tot_perceptive_dims:]
+        obs_proprio, obs_obstacle_position, obs_perceptive = observations[:, :-(self.tot_perceptive_dims+3)], observations[:, -(self.tot_perceptive_dims+3):-self.tot_perceptive_dims], observations[:, -self.tot_perceptive_dims:]
         latent = self.encoder(obs_perceptive.reshape(observations.shape[0], *self.perceptive_dims))
         input = torch.cat((obs_proprio, latent), dim=1)
         mean = self.actor(input)
         self.distribution = Normal(mean, mean * 0.0 + self.std)
+        self.vision_latent_space = latent
+        self.obstacle_position_observation = obs_obstacle_position
 
     def act(self, observations, **kwargs):
         self.update_distribution(observations)
@@ -137,14 +146,14 @@ class OccupancyActorCritic(nn.Module):
         return self.distribution.log_prob(actions).sum(dim=-1)
 
     def act_inference(self, observations):
-        obs_proprio, obs_perceptive = observations[:, :-self.tot_perceptive_dims], observations[:, -self.tot_perceptive_dims:]
+        obs_proprio, obs_obstacle_position, obs_perceptive = observations[:, :-(self.tot_perceptive_dims+3)], observations[:, -(self.tot_perceptive_dims+3):-self.tot_perceptive_dims], observations[:, -self.tot_perceptive_dims:]
         latent = self.encoder(obs_perceptive.reshape(observations.shape[0], *self.perceptive_dims))
         input = torch.cat((obs_proprio, latent), dim=1)
         actions_mean = self.actor(input)
         return actions_mean
 
     def evaluate(self, critic_observations, **kwargs):
-        obs_proprio, obs_perceptive = critic_observations[:, :-self.tot_perceptive_dims], critic_observations[:, -self.tot_perceptive_dims:]
+        obs_proprio, obs_obstacle_position, obs_perceptive = critic_observations[:, :-(self.tot_perceptive_dims+3)], critic_observations[:, -(self.tot_perceptive_dims+3):-self.tot_perceptive_dims], critic_observations[:, -self.tot_perceptive_dims:]
         latent = self.encoder(obs_perceptive.reshape(critic_observations.shape[0], *self.perceptive_dims))
         input = torch.cat((obs_proprio, latent), dim=1)
         value = self.critic(input)

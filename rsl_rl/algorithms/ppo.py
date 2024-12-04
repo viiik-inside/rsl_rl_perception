@@ -126,6 +126,8 @@ class PPO:
             mu_batch = self.actor_critic.action_mean
             sigma_batch = self.actor_critic.action_std
             entropy_batch = self.actor_critic.entropy
+            vision_latent_space = self.actor_critic.vision_latent_space
+            obstacle_position_observation = self.actor_critic.obstacle_position_observation
 
             # KL
             if self.desired_kl is not None and self.schedule == "adaptive":
@@ -165,8 +167,13 @@ class PPO:
                 value_loss = torch.max(value_losses, value_losses_clipped).mean()
             else:
                 value_loss = (returns_batch - value_batch).pow(2).mean()
+            
+            # Add l1 position loss for the vision encoder
+            # We add this to additionally train the vision encoder to detect the position of the obstacle
+            if vision_latent_space is not None:
+                vision_encoder_supervision_loss = (vision_latent_space - obstacle_position_observation).abs().mean()
 
-            loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()
+            loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean() + vision_encoder_supervision_loss
 
             # Gradient step
             self.optimizer.zero_grad()
