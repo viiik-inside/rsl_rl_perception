@@ -42,8 +42,8 @@ class PerceptiveActorCritic(nn.Module):
         self.tot_perceptive_dims = 1
         for perceptive_dim in self.perceptive_dims:
             self.tot_perceptive_dims *= perceptive_dim
-        mlp_input_dim_a = num_actor_obs - self.tot_perceptive_dims + 512 -3
-        mlp_input_dim_c = num_critic_obs - self.tot_perceptive_dims + 512 -3
+        mlp_input_dim_a = num_actor_obs - self.tot_perceptive_dims + 32 -3
+        mlp_input_dim_c = num_critic_obs - self.tot_perceptive_dims + 32 -3
         # Policy
         actor_layers = []
         actor_layers.append(nn.Linear(mlp_input_dim_a, actor_hidden_dims[0]))
@@ -69,68 +69,40 @@ class PerceptiveActorCritic(nn.Module):
         self.critic = nn.Sequential(*critic_layers)
 
         # Perceptive inputs
-        resnet18 = models.resnet18(pretrained=True)
         self.encoder = nn.Sequential(
-            resnet18.conv1,   # 64 filters, stride=2, kernel_size=7
-            resnet18.bn1,
-            resnet18.relu,
-            resnet18.maxpool, # Reduces spatial dimensions by 2
-            resnet18.layer1,  # 64 filters
-            resnet18.layer2,  # 128 filters
-            resnet18.layer3,  # 256 filters
-            resnet18.layer4   # 512 filters
+            nn.Conv2d(3, 32, kernel_size=4, stride=2, padding=1),    # [batch, 32, H/2, W/2]
+            nn.ReLU(inplace=True),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2, padding=1),    # [batch, 64, H/4, W/4]
+            nn.ReLU(inplace=True),
+            nn.Conv2d(64, 128, kernel_size=4, stride=2, padding=1),    # [batch, 128, H/8, W/8]
+            nn.ReLU(inplace=True),
+            nn.Conv2d(128, 256, kernel_size=4, stride=2, padding=1),    # [batch, 256, H/16, W/16]
+            nn.ReLU(inplace=True),
         )
+        # Compute the size of the feature maps after the last Conv layer
+        # This is necessary for creating the fully connected layers
+        self.fc_input_dim = 256 * 10 * 10    # Adjust according to input image size
 
-        # Freeze encoder
-        for param in self.encoder.parameters():
-            param.requires_grad = False
+        # Fully connected layers for mean and log variance
+        self.fc_mu = nn.Linear(self.fc_input_dim, 32)
 
-
-        self.decoder = nn.Sequential(
-            # Upsample from 5x5 to 10x10
-            nn.ConvTranspose2d(512, 512, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(512),
-            nn.ReLU(inplace=True),
-            
-            # Upsample from 10x10 to 20x20
-            nn.ConvTranspose2d(512, 256, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-            
-            # Upsample from 20x20 to 40x40
-            nn.ConvTranspose2d(256, 128, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(128),
-            nn.ReLU(inplace=True),
-            
-            # Upsample from 40x40 to 80x80
-            nn.ConvTranspose2d(128, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            
-            # Upsample from 80x80 to 160x160
-            nn.ConvTranspose2d(64, 64, kernel_size=3, stride=2, padding=1, output_padding=1),
-            nn.BatchNorm2d(64),
-            nn.ReLU(inplace=True),
-            
-            # Final layer to get 3 output channels
-            nn.ConvTranspose2d(64, 3, kernel_size=3, stride=1, padding=1),
-            nn.Sigmoid()  # Output pixel values between 0 and 1
-        )
+        # # Freeze encoder
+        # for param in self.encoder.parameters():
+        #     param.requires_grad = False
+        
+        # for param in self.fc_mu.parameters():
+        #     param.requires_grad = False
 
         # Load the model weights here
-        checkpoint = torch.load('models/current_best_autoencoder.pth')
-        encoder_state_dict = {k.replace('encoder.', ''): v for k, v in checkpoint.items() if k.startswith('encoder.')}
-        decoder_state_dict = {k.replace('decoder.', ''): v for k, v in checkpoint.items() if k.startswith('decoder.')}
+        checkpoint = torch.load('models/vae_best.pth')
+        encoder_state_dict = {k.replace('encoder.', ''): v for k, v in checkpoint.items() if k.startswith('encoder.encoder.')}
+        fc_mu_state_dict = {k.replace('encoder.fc_mu.', ''): v for k, v in checkpoint.items() if k.startswith('encoder.fc_mu.')}
         self.encoder.load_state_dict(encoder_state_dict)
-        self.decoder.load_state_dict(decoder_state_dict)
-
-        self.latent_compresser = nn.Sequential(nn.AdaptiveAvgPool2d(output_size=(1, 1)), nn.Flatten())
+        self.fc_mu.load_state_dict(fc_mu_state_dict)
 
         print(f"Actor MLP: {self.actor}")
         print(f"Critic MLP: {self.critic}")
         print(f"Encoder CNN: {self.encoder}")
-        print(f"Decoder CNN: {self.decoder}")
-        print(f"Latent Compressor: {self.latent_compresser}")
 
         # Action noise
         self.std = nn.Parameter(init_noise_std * torch.ones(num_actions))
@@ -139,10 +111,9 @@ class PerceptiveActorCritic(nn.Module):
         Normal.set_default_validate_args = False
 
         # Add vision encoder latent space
-        self.vision_latent_space = None
+        self.vision_fc_mu = None
         self.obstacle_position_observation = None
         self.obs_perceptive = None
-        self.decoded_input = None
 
         self.episode = 0
 
@@ -179,15 +150,14 @@ class PerceptiveActorCritic(nn.Module):
     def update_distribution(self, observations):
         obs_proprio, obs_obstacle_position, obs_perceptive = observations[:, :-(self.tot_perceptive_dims+3)], observations[:, -(self.tot_perceptive_dims+3):-self.tot_perceptive_dims], observations[:, -self.tot_perceptive_dims:]
         latent = self.encoder(obs_perceptive.reshape(observations.shape[0], *self.perceptive_dims))
-        decoded_input = self.decoder(latent)
-        latent_compressed = self.latent_compresser(latent)
-        input = torch.cat((obs_proprio, latent_compressed), dim=1)
+        latent = latent.view(latent.size(0), -1)
+        fc_mu = self.fc_mu(latent)
+        input = torch.cat((obs_proprio, fc_mu), dim=1)
         mean = self.actor(input)
         self.distribution = Normal(mean, mean * 0.0 + self.std)
-        self.vision_latent_space = latent
+        self.vision_fc_mu = fc_mu
         self.obstacle_position_observation = obs_obstacle_position
         self.obs_perceptive = obs_perceptive.reshape(observations.shape[0], *self.perceptive_dims)
-        self.decoded_input = decoded_input
 
     def act(self, observations, **kwargs):
         self.update_distribution(observations)
@@ -202,15 +172,18 @@ class PerceptiveActorCritic(nn.Module):
         # np.save(f"training_images/obs_perception_ {self.episode}", obs_perceptive.reshape(observations.shape[0], *self.perceptive_dims).cpu().numpy())
         self.episode += 1
         latent = self.encoder(obs_perceptive.reshape(observations.shape[0], *self.perceptive_dims))
-        input = torch.cat((obs_proprio, latent), dim=1)
+        latent = latent.view(latent.size(0), -1)
+        fc_mu = self.fc_mu(latent)
+        input = torch.cat((obs_proprio, fc_mu), dim=1)
         actions_mean = self.actor(input)
         return actions_mean
 
     def evaluate(self, critic_observations, **kwargs):
         obs_proprio, obs_obstacle_position, obs_perceptive = critic_observations[:, :-(self.tot_perceptive_dims+3)], critic_observations[:, -(self.tot_perceptive_dims+3):-self.tot_perceptive_dims], critic_observations[:, -self.tot_perceptive_dims:]
         latent = self.encoder(obs_perceptive.reshape(critic_observations.shape[0], *self.perceptive_dims))
-        latent_compressed = self.latent_compresser(latent)
-        input = torch.cat((obs_proprio, latent_compressed), dim=1)
+        latent = latent.view(latent.size(0), -1)
+        fc_mu = self.fc_mu(latent)
+        input = torch.cat((obs_proprio, fc_mu), dim=1)
         value = self.critic(input)
         return value
 

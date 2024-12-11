@@ -127,10 +127,10 @@ class PPO:
             mu_batch = self.actor_critic.action_mean
             sigma_batch = self.actor_critic.action_std
             entropy_batch = self.actor_critic.entropy
-            vision_latent_space = self.actor_critic.vision_latent_space
-            obstacle_position_observation = self.actor_critic.obstacle_position_observation
-            obs_perceptive = self.actor_critic.obs_perceptive
-            decoded_input = self.actor_critic.decoded_input
+            # vision_latent_space = self.actor_critic.vision_latent_space
+            # obstacle_position_observation = self.actor_critic.obstacle_position_observation
+            # obs_perceptive = self.actor_critic.obs_perceptive
+            # decoded_input = self.actor_critic.decoded_input
 
             # KL
             if self.desired_kl is not None and self.schedule == "adaptive":
