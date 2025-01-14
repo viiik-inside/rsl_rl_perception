@@ -55,6 +55,7 @@ class PPO:
         self.max_grad_norm = max_grad_norm
         self.use_clipped_value_loss = use_clipped_value_loss
         self.MSE_loss = nn.MSELoss()
+        self.l1_loss = nn.L1Loss()
 
     def init_storage(self, num_envs, num_transitions_per_env, actor_obs_shape, critic_obs_shape, action_shape):
         self.storage = RolloutStorage(
@@ -127,10 +128,9 @@ class PPO:
             mu_batch = self.actor_critic.action_mean
             sigma_batch = self.actor_critic.action_std
             entropy_batch = self.actor_critic.entropy
-            # vision_latent_space = self.actor_critic.vision_latent_space
+            # obstacle_position_prediction = self.actor_critic.obstacle_position_pred
             # obstacle_position_observation = self.actor_critic.obstacle_position_observation
             # obs_perceptive = self.actor_critic.obs_perceptive
-            # decoded_input = self.actor_critic.decoded_input
 
             # KL
             if self.desired_kl is not None and self.schedule == "adaptive":
@@ -171,12 +171,12 @@ class PPO:
             else:
                 value_loss = (returns_batch - value_batch).pow(2).mean()
             
-            # Add MSE loss for the vision autoencoder
-            # We add this to additionally train the vision encoder to understand the environment
-            # if vision_latent_space is not None:
-            #     vision_encoder_supervision_loss = self.MSE_loss(decoded_input, obs_perceptive)
+            # # Add MSE loss for the vision autoencoder
+            # # We add this to additionally train the vision encoder to understand the environment
+            # if obstacle_position_prediction is not None:
+            #     vision_encoder_supervision_loss = self.l1_loss(obstacle_position_prediction, obstacle_position_observation)
 
-            loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean() # + vision_encoder_supervision_loss
+            loss = surrogate_loss + self.value_loss_coef * value_loss - self.entropy_coef * entropy_batch.mean()# + vision_encoder_supervision_loss
 
             # Gradient step
             self.optimizer.zero_grad()
