@@ -93,14 +93,14 @@ class OccupancyActorCritic(nn.Module):
         #     param.requires_grad = False
 
         # # Load the model weights here
-        # checkpoint = torch.load('models/vae3d_best.pth')
+        # checkpoint = torch.load('models/vae3d_sdf_best.pth')
         # encoder_state_dict = {k.replace('encoder.', ''): v for k, v in checkpoint.items() if k.startswith('encoder.encoder.')}
         # fc_mu_state_dict = {k.replace('encoder.fc_mu.', ''): v for k, v in checkpoint.items() if k.startswith('encoder.fc_mu.')}
         # self.encoder.load_state_dict(encoder_state_dict)
         # self.fc_mu.load_state_dict(fc_mu_state_dict)
 
         # # Load the actor and critic weights here
-        # checkpoint_ac = torch.load('logs/rsl_rl/franka_reach_occupancy/warmup_no_obstacle/model_200.pt')
+        # checkpoint_ac = torch.load('logs/rsl_rl/franka_reach_sdf/warmup_no_obstacle_frozen/model_200.pt')
         # actor_state_dict = {k.replace('actor.', ''): v for k, v in checkpoint_ac['model_state_dict'].items() if k.startswith('actor.')}
         # critic_state_dict = {k.replace('critic.', ''): v for k, v in checkpoint_ac['model_state_dict'].items() if k.startswith('critic.')}
         # self.actor.load_state_dict(actor_state_dict)
